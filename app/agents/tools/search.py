@@ -1,9 +1,9 @@
 """
 Search tool for LangChain agent.
 """
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Type
 from langchain.tools import StructuredTool
-from pydantic import BaseModel, Field
+from langchain.pydantic_v1 import BaseModel, Field
 
 from app.rag.retriever import get_retriever
 from app.core.logging import setup_logging
@@ -14,9 +14,9 @@ logger = setup_logging()
 class SearchInput(BaseModel):
     """Input schema for search tool."""
     query: str = Field(..., description="検索クエリ（キャラクター名、武器名、攻略情報など）")
-    element: Optional[str] = Field(default=None, description="属性フィルター（火、水、土、風、光、闇）")
-    doc_type: Optional[str] = Field(default=None, description="ドキュメントタイプ（character, weapon, quest等）")
-    top_k: int = Field(default=5, description="取得する結果の数（デフォルト: 5）")
+    element: Optional[str] = Field(None, description="属性フィルター（火、水、土、風、光、闇）")
+    doc_type: Optional[str] = Field(None, description="ドキュメントタイプ（character, weapon, quest等）")
+    top_k: int = Field(5, description="取得する結果の数（デフォルト: 5）")
 
 
 def search_knowledge(
