@@ -1,11 +1,13 @@
 """
 GameWith scraper using requests (no Playwright required).
 シンプルで安定、MacOS/Windows両対応。
+URLから直接キャラクター詳細を取得します。
 """
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import asyncio
 import re
+import time
 import requests
 from bs4 import BeautifulSoup
 
@@ -19,7 +21,7 @@ settings = get_settings()
 class GameWithSimpleScraper:
     """Simple scraper using requests (no Playwright)."""
     
-    BASE_URL = "https://gamewith.jp/granblue"
+    BASE_URL = "https://グランブルーファンタジー.gamewith.jp"
     CHARACTER_LIST_URL = "/article/show/20722"
     
     def __init__(self):
@@ -28,6 +30,7 @@ class GameWithSimpleScraper:
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': settings.scraper_user_agent,
+            'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
         })
     
     def _fetch_page(self, url: str) -> str:
@@ -152,70 +155,113 @@ class GameWithSimpleScraper:
         return characters
     
     def scrape_character_detail(self, url: str) -> Dict[str, Any]:
-        """Scrape detailed character information."""
+        """
+        Scrape detailed character information from URL.
+        
+        Args:
+            url: Character page URL
+            
+        Returns:
+            Character detail dictionary
+        """
         logger.info(f"Scraping character detail: {url}")
         
-        content = self._fetch_page(url)
-        soup = BeautifulSoup(content, "lxml")
-        
-        # タイトルからキャラ名を取得
-        title = soup.select_one("h1")
-        name = title.get_text(strip=True) if title else "Unknown"
-        
-        # 記事本文を取得
-        article = soup.select_one("article, .article-body, #article-body")
-        
-        if not article:
-            logger.warning(f"Article content not found for {url}")
+        try:
+            content = self._fetch_page(url)
+            soup = BeautifulSoup(content, "lxml")
+            
+            # タイトルからキャラ名を取得
+            title = soup.select_one("h1")
+            name = title.get_text(strip=True) if title else "Unknown"
+            
+            # 記事本文を取得
+            article = soup.select_one("article, .article-body, #article-body")
+            
+            if not article:
+                logger.warning(f"Article content not found for {url}")
+                return {
+                    "url": url,
+                    "content": "",
+                    "scraped_at": datetime.now(),
+                }
+            
+            # テキストコンテンツを抽出
+            content_parts = []
+            
+            # 見出しとテキストを順番に抽出
+            for elem in article.find_all(['h2', 'h3', 'h4', 'p', 'li', 'table']):
+                if elem.name in ['h2', 'h3', 'h4']:
+                    heading_text = elem.get_text(strip=True)
+                    if heading_text and len(heading_text) < 100:  # 長すぎる見出しは除外
+                        content_parts.append(f"\n## {heading_text}\n")
+                elif elem.name == 'p':
+                    text = elem.get_text(strip=True)
+                    # 広告やノイズを除外
+                    if text and len(text) > 10 and not text.startswith('PR'):
+                        content_parts.append(text)
+                elif elem.name == 'li':
+                    text = elem.get_text(strip=True)
+                    if text and len(text) > 5:
+                        content_parts.append(f"- {text}")
+                elif elem.name == 'table':
+                    # テーブルは簡易的にテキスト化
+                    rows = elem.find_all('tr')[:20]  # 最大20行
+                    for row in rows:
+                        cells = [td.get_text(strip=True) for td in row.find_all(['th', 'td'])]
+                        if cells and any(cells):  # 空でない行のみ
+                            content_parts.append(" | ".join(cells))
+            
+            full_content = "\n".join(content_parts)
+            
+            # 属性を抽出
+            element = None
+            for elem_name in ["火", "水", "土", "風", "光", "闇"]:
+                if elem_name in full_content[:500]:
+                    element = elem_name
+                    break
+            
+            # タグ/カテゴリを抽出
+            tags = []
+            tag_keywords = {
+                "初心者向け": ["初心者", "おすすめ", "序盤"],
+                "高難易度": ["高難易度", "ソロ", "フルオート"],
+                "周回": ["周回", "効率", "短期"],
+                "サポート": ["サポート", "バフ", "デバフ", "支援"],
+                "アタッカー": ["アタッカー", "火力", "ダメージ", "攻撃"],
+                "回復": ["回復", "ヒール", "HP"],
+                "防御": ["防御", "ダメカ", "カット"],
+            }
+            
+            for tag, keywords in tag_keywords.items():
+                if any(kw in full_content[:1000] for kw in keywords):
+                    tags.append(tag)
+            
+            return {
+                "name": name,
+                "url": url,
+                "content": full_content,
+                "element": element,
+                "tags": tags,
+                "scraped_at": datetime.now(),
+                "source": "gamewith",
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to scrape detail from {url}: {e}")
             return {
                 "url": url,
                 "content": "",
                 "scraped_at": datetime.now(),
             }
-        
-        # テキストコンテンツを抽出
-        content_parts = []
-        
-        for elem in article.find_all(['h2', 'h3', 'h4', 'p', 'li', 'table']):
-            if elem.name in ['h2', 'h3', 'h4']:
-                heading_text = elem.get_text(strip=True)
-                if heading_text:
-                    content_parts.append(f"\n## {heading_text}\n")
-            elif elem.name == 'p':
-                text = elem.get_text(strip=True)
-                if text and len(text) > 10:
-                    content_parts.append(text)
-            elif elem.name == 'li':
-                text = elem.get_text(strip=True)
-                if text:
-                    content_parts.append(f"- {text}")
-            elif elem.name == 'table':
-                rows = elem.find_all('tr')[:10]
-                for row in rows:
-                    cells = [td.get_text(strip=True) for td in row.find_all(['th', 'td'])]
-                    if cells:
-                        content_parts.append(" | ".join(cells))
-        
-        full_content = "\n".join(content_parts)
-        
-        # 属性を抽出
-        element = None
-        for elem_name in ["火", "水", "土", "風", "光", "闇"]:
-            if elem_name in full_content[:500]:
-                element = elem_name
-                break
-        
-        return {
-            "name": name,
-            "url": url,
-            "content": full_content,
-            "element": element,
-            "scraped_at": datetime.now(),
-            "source": "gamewith",
-        }
     
-    def scrape_all_characters(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Scrape all character information."""
+    def scrape_all_characters(self, limit: Optional[int] = None, fetch_details: bool = True) -> List[Dict[str, Any]]:
+        """
+        Scrape all character information.
+        
+        Args:
+            limit: Limit number of characters
+            fetch_details: If True, fetch detailed info from each character page
+        """
         import time
         
         # Get character list
@@ -224,9 +270,16 @@ class GameWithSimpleScraper:
         if limit:
             characters = characters[:limit]
         
+        logger.info(f"Processing {len(characters)} characters (fetch_details={fetch_details})")
+        
+        if not fetch_details:
+            # 詳細取得しない場合はリスト情報のみ
+            logger.info("Skipping detail pages - using list info only")
+            return characters
+        
+        # 詳細ページを取得
         all_details = []
         
-        # Scrape each character with delay
         for i, char in enumerate(characters):
             if not char.get("url"):
                 logger.warning(f"No URL for character: {char.get('name')}")
@@ -234,43 +287,56 @@ class GameWithSimpleScraper:
                 continue
             
             try:
-                logger.info(f"Scraping character {i+1}/{len(characters)}: {char.get('name')}")
+                logger.info(f"[{i+1}/{len(characters)}] Fetching details: {char.get('name')}")
                 
                 detail = self.scrape_character_detail(char["url"])
                 
                 # Merge list info with detail
                 merged = {**char, **detail}
+                
+                # 詳細から取得したタグを追加
+                if detail.get("tags"):
+                    existing_tags = set(merged.get("tags", []))
+                    new_tags = set(detail["tags"])
+                    merged["tags"] = list(existing_tags | new_tags)
+                
                 all_details.append(merged)
                 
-                # Rate limiting
+                # Rate limiting（サーバーに優しく）
                 time.sleep(settings.scraper_delay)
                 
             except Exception as e:
                 logger.error(f"Failed to scrape {char.get('name')}: {e}")
+                # エラーでもリスト情報は保存
                 all_details.append(char)
                 continue
         
         return all_details
 
 
-def scrape_gamewith_simple(character_limit: Optional[int] = 10) -> List[Dict[str, Any]]:
+def scrape_gamewith_simple(character_limit: Optional[int] = 10, fetch_details: bool = True) -> List[Dict[str, Any]]:
     """
     Scrape GameWith data (synchronous version).
     
     Args:
         character_limit: Limit number of characters
+        fetch_details: If True, fetch detailed info from each character page
         
     Returns:
         List of scraped documents
     """
     scraper = GameWithSimpleScraper()
-    return scraper.scrape_all_characters(limit=character_limit)
+    return scraper.scrape_all_characters(limit=character_limit, fetch_details=fetch_details)
 
 
 # Async wrapper for compatibility
-async def scrape_gamewith(character_limit: Optional[int] = 10) -> List[Dict[str, Any]]:
+async def scrape_gamewith(character_limit: Optional[int] = 10, fetch_details: bool = True) -> List[Dict[str, Any]]:
     """
     Scrape GameWith data (async wrapper).
+    
+    Args:
+        character_limit: Limit number of characters
+        fetch_details: If True, fetch detailed info from each character page
     """
     # Run in thread pool to avoid blocking
     import concurrent.futures
@@ -279,8 +345,7 @@ async def scrape_gamewith(character_limit: Optional[int] = 10) -> List[Dict[str,
     with concurrent.futures.ThreadPoolExecutor() as pool:
         result = await loop.run_in_executor(
             pool,
-            scrape_gamewith_simple,
-            character_limit
+            lambda: scrape_gamewith_simple(character_limit, fetch_details)
         )
     
     return result
@@ -290,10 +355,18 @@ if __name__ == "__main__":
     logger.info("Testing GameWith simple scraper...")
     
     try:
-        data = scrape_gamewith_simple(character_limit=3)
-        logger.info(f"Scraped {len(data)} items")
+        # テスト: 詳細取得あり
+        logger.info("=== Test with details ===")
+        data = scrape_gamewith_simple(character_limit=2, fetch_details=True)
+        logger.info(f"Scraped {len(data)} items with details")
         for item in data:
-            logger.info(f"  - {item['name']} ({item['element']}) Rating: {item.get('rating', 'N/A')}")
+            logger.info(f"\n  Name: {item['name']}")
+            logger.info(f"  Element: {item['element']}")
+            logger.info(f"  Rating: {item.get('rating', 'N/A')}")
+            logger.info(f"  Tags: {item.get('tags', [])}")
+            logger.info(f"  Content length: {len(item.get('content', ''))} chars")
+            logger.info(f"  Content preview: {item.get('content', '')[:200]}...")
+            
     except Exception as e:
         logger.error(f"Error: {e}")
         import traceback

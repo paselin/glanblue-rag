@@ -10,8 +10,8 @@ from typing import List, Dict, Any, Optional
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Use file-based scraper (works without Playwright/requests - uses local HTML)
-from app.services.scraper.gamewith_file_scraper import scrape_gamewith_from_file as scrape_gamewith
+# Use simple scraper with URL fetching (requests-based, works on MacOS/Windows)
+from app.services.scraper.gamewith_simple_scraper import scrape_gamewith
 from app.services.indexer import get_indexer
 from app.core.logging import setup_logging
 
@@ -20,12 +20,14 @@ logger = setup_logging()
 
 async def scrape_all_sources(
     character_limit: int = None,
+    fetch_details: bool = True,
 ) -> List[Dict[str, Any]]:
     """
     Scrape from GameWith.
     
     Args:
         character_limit: Limit number of characters
+        fetch_details: If True, fetch detailed info from each character page
         
     Returns:
         List of scraped documents
@@ -34,8 +36,16 @@ async def scrape_all_sources(
     
     # GameWith実スクレイパーを使用
     try:
-        logger.info("=== Scraping GameWith (Real Scraper) ===")
-        gamewith_data = await scrape_gamewith(character_limit=character_limit)
+        logger.info("=== Scraping GameWith (URL Fetching) ===")
+        if fetch_details:
+            logger.info("Fetching detailed information from each character page")
+        else:
+            logger.info("Using list info only (faster)")
+            
+        gamewith_data = await scrape_gamewith(
+            character_limit=character_limit,
+            fetch_details=fetch_details
+        )
         logger.info(f"GameWith: Scraped {len(gamewith_data)} items")
         all_documents.extend(gamewith_data)
     except Exception as e:
@@ -49,6 +59,7 @@ async def scrape_all_sources(
 async def scrape_and_index(
     character_limit: Optional[int] = 10,
     dry_run: bool = False,
+    fetch_details: bool = True,
 ):
     """
     Scrape data and index into vector store.
@@ -56,15 +67,18 @@ async def scrape_and_index(
     Args:
         character_limit: Limit per source (None for all)
         dry_run: If True, scrape but don't index
+        fetch_details: If True, fetch detailed info from each character page
     """
     logger.info("Starting scrape and index process...")
     logger.info(f"Character limit: {character_limit if character_limit else 'ALL (no limit)'}")
     logger.info(f"Dry run: {dry_run}")
-    logger.info("Using REAL GameWith scraper")
+    logger.info(f"Fetch details: {fetch_details}")
+    logger.info("Using GameWith URL scraper")
     
     # Scrape data
     documents = await scrape_all_sources(
         character_limit=character_limit,
+        fetch_details=fetch_details,
     )
     
     if not documents:
@@ -175,13 +189,18 @@ if __name__ == "__main__":
     parser.add_argument("--limit", type=int, default=10, help="Character limit (default: 10)")
     parser.add_argument("--dry-run", action="store_true", help="Scrape but don't index")
     parser.add_argument("--all", action="store_true", help="Scrape all characters (no limit)")
+    parser.add_argument("--no-details", action="store_true", help="Skip fetching detail pages (faster)")
     
     args = parser.parse_args()
     
     # --allが指定された場合はlimitをNoneに
     limit = None if args.all else args.limit
     
+    # --no-detailsでない限り詳細を取得
+    fetch_details = not args.no_details
+    
     asyncio.run(scrape_and_index(
         character_limit=limit,
         dry_run=args.dry_run,
+        fetch_details=fetch_details,
     ))
