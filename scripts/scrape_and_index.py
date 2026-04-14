@@ -47,18 +47,18 @@ async def scrape_all_sources(
 
 
 async def scrape_and_index(
-    character_limit: int = 10,
+    character_limit: Optional[int] = 10,
     dry_run: bool = False,
 ):
     """
     Scrape data and index into vector store.
     
     Args:
-        character_limit: Limit per source
+        character_limit: Limit per source (None for all)
         dry_run: If True, scrape but don't index
     """
     logger.info("Starting scrape and index process...")
-    logger.info(f"Character limit: {character_limit}")
+    logger.info(f"Character limit: {character_limit if character_limit else 'ALL (no limit)'}")
     logger.info(f"Dry run: {dry_run}")
     logger.info("Using REAL GameWith scraper")
     
@@ -171,13 +171,17 @@ async def scrape_and_index(
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="Scrape Granblue Fantasy data")
+    parser = argparse.ArgumentParser(description="Scrape Granblue Fantasy data from GameWith")
     parser.add_argument("--limit", type=int, default=10, help="Character limit (default: 10)")
     parser.add_argument("--dry-run", action="store_true", help="Scrape but don't index")
+    parser.add_argument("--all", action="store_true", help="Scrape all characters (no limit)")
     
     args = parser.parse_args()
     
+    # --allが指定された場合はlimitをNoneに
+    limit = None if args.all else args.limit
+    
     asyncio.run(scrape_and_index(
-        character_limit=args.limit,
+        character_limit=limit,
         dry_run=args.dry_run,
     ))

@@ -169,3 +169,51 @@ curl -X POST http://localhost:8000/api/search -H "Content-Type: application/json
 ```
 
 準備完了です！実行してみてください 🚀
+
+## --all オプションの使用
+
+### 全キャラクター（648件）を一括取得
+
+```powershell
+# Windows
+scripts\scrape.bat --all --dry-run    # プレビューのみ
+scripts\scrape.bat --all              # 全件インデックス
+
+# Mac/Linux
+./scripts/scrape.sh --all --dry-run
+./scripts/scrape.sh --all
+```
+
+### オプションまとめ
+
+| オプション | 説明 | 例 |
+|-----------|------|-----|
+| `--limit N` | N件まで取得 | `--limit 10` |
+| `--all` | 全件取得（limitを無視） | `--all` |
+| `--dry-run` | インデックスせずプレビューのみ | `--dry-run` |
+
+### 推奨実行順序
+
+```powershell
+# 1. 少量でテスト
+scripts\scrape.bat --limit 10 --dry-run
+
+# 2. 10件をインデックス
+scripts\scrape.bat --limit 10
+
+# 3. 動作確認後、全件実行
+scripts\scrape.bat --all
+```
+
+### 注意事項
+
+- **全件実行**: 648件の処理に5-10分かかる可能性
+- **メモリ使用**: Embeddings生成で数GBのメモリを使用
+- **分割実行も可能**: エラー時は途中から再開可能
+
+```powershell
+# 分割実行例（100件ずつ）
+scripts\scrape.bat --limit 100
+scripts\scrape.bat --limit 200
+# ...続ける
+```
