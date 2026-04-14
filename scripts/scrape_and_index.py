@@ -4,7 +4,7 @@ Master scraper script that coordinates all data sources.
 import sys
 from pathlib import Path
 import asyncio
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
