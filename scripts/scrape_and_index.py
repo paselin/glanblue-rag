@@ -10,8 +10,8 @@ from typing import List, Dict, Any
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Use real GameWith scraper
-from app.services.scraper.gamewith_scraper import scrape_gamewith
+# Use file-based scraper (works without Playwright/requests - uses local HTML)
+from app.services.scraper.gamewith_file_scraper import scrape_gamewith_from_file as scrape_gamewith
 from app.services.indexer import get_indexer
 from app.core.logging import setup_logging
 
@@ -73,13 +73,71 @@ async def scrape_and_index(
     
     logger.info(f"Total scraped documents: {len(documents)}")
     
-    # Show sample
-    logger.info("\n=== Sample Data ===")
-    for i, doc in enumerate(documents[:3]):
-        logger.info(f"{i+1}. {doc.get('name', 'N/A')} ({doc.get('type', 'unknown')}) - Source: {doc.get('source', 'unknown')}")
+    # Show detailed preview
+    logger.info("\n" + "="*80)
+    logger.info("=== SCRAPED DATA PREVIEW ===")
+    logger.info("="*80)
+    
+    for i, doc in enumerate(documents[:5]):  # 最初の5件を詳細表示
+        logger.info(f"\n[{i+1}] {doc.get('name', 'N/A')}")
+        logger.info(f"    Type: {doc.get('type', 'unknown')}")
+        logger.info(f"    Element: {doc.get('element', 'N/A')}")
+        logger.info(f"    Rarity: {doc.get('rarity', 'N/A')}")
+        logger.info(f"    Rating: {doc.get('rating', 'N/A')}")
+        logger.info(f"    Tags: {', '.join(doc.get('tags', [])) if doc.get('tags') else 'なし'}")
+        logger.info(f"    Source: {doc.get('source', 'unknown')}")
+        logger.info(f"    URL: {doc.get('url', 'N/A')[:80]}...")
+        
+        # コンテンツのプレビュー（最初の300文字）
         if doc.get('content'):
-            content_preview = doc['content'][:100] + "..." if len(doc['content']) > 100 else doc['content']
-            logger.info(f"   Preview: {content_preview}")
+            content_preview = doc['content'][:300].replace('\n', ' ')
+            logger.info(f"    Content Preview:\n      {content_preview}...")
+        else:
+            logger.info(f"    Content: [No content]")
+        
+        logger.info(f"    " + "-"*76)
+    
+    # 統計情報
+    logger.info("\n" + "="*80)
+    logger.info("=== STATISTICS ===")
+    logger.info("="*80)
+    
+    # 属性別集計
+    element_counts = {}
+    for doc in documents:
+        elem = doc.get('element', 'Unknown')
+        element_counts[elem] = element_counts.get(elem, 0) + 1
+    
+    logger.info("\n属性別キャラクター数:")
+    for elem, count in sorted(element_counts.items(), key=lambda x: x[1], reverse=True):
+        logger.info(f"  {elem}: {count}件")
+    
+    # 評価点分布
+    ratings = [doc.get('rating') for doc in documents if doc.get('rating')]
+    if ratings:
+        avg_rating = sum(ratings) / len(ratings)
+        max_rating = max(ratings)
+        min_rating = min(ratings)
+        logger.info(f"\n評価点:")
+        logger.info(f"  平均: {avg_rating:.2f}")
+        logger.info(f"  最高: {max_rating}")
+        logger.info(f"  最低: {min_rating}")
+        logger.info(f"  評価あり: {len(ratings)}件 / {len(documents)}件")
+    
+    # タグ集計
+    all_tags = []
+    for doc in documents:
+        if doc.get('tags'):
+            all_tags.extend(doc['tags'])
+    
+    if all_tags:
+        from collections import Counter
+        tag_counts = Counter(all_tags)
+        logger.info(f"\nよくあるタグ（上位10件）:")
+        for tag, count in tag_counts.most_common(10):
+            logger.info(f"  {tag}: {count}件")
+    
+    logger.info("\n" + "="*80)
     
     if dry_run:
         logger.info("Dry run mode - skipping indexing")

@@ -24,7 +24,7 @@ settings = get_settings()
 class GameWithScraper:
     """Scraper for GameWith Granblue Fantasy section."""
     
-    BASE_URL = "https://gamewith.jp/granblue"
+    BASE_URL = "https://グランブルーファンタジー.gamewith.jp"
     
     # キャラクター一覧ページ
     CHARACTER_LIST_URL = "/article/show/20722"
@@ -44,7 +44,17 @@ class GameWithScraper:
     async def __aenter__(self):
         """Context manager entry."""
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=True)
+        
+        # ブラウザ起動オプションを調整（安定性向上）
+        self.browser = await self.playwright.chromium.launch(
+            headless=False,
+            args=[
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+            ],
+            timeout=60000,  # 起動タイムアウトを60秒に
+        )
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
