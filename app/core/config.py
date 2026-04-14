@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_host: str = "0.0.0.0"
     app_port: int = 8000
-    log_level: str = "INFO"
+    log_level: str = "DEBUG"  # DEBUG for troubleshooting
     
     # LLM API Configuration
     openai_api_key: str = "dummy-key"  # ローカルLLMの場合は不要だがフォールバック用

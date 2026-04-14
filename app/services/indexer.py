@@ -44,6 +44,14 @@ class DocumentIndexer:
         
         for doc in documents:
             chunks = self._process_document(doc)
+            
+            # Debug: Check chunk types
+            for i, chunk in enumerate(chunks):
+                logger.debug(f"Chunk {i} type: {type(chunk)}")
+                if not isinstance(chunk, LangchainDocument):
+                    logger.error(f"Invalid chunk type detected: {type(chunk)}")
+                    logger.error(f"Chunk content: {chunk}")
+            
             all_chunks.extend(chunks)
             
             # Generate IDs
@@ -51,12 +59,34 @@ class DocumentIndexer:
             chunk_ids = [f"{base_id}_chunk_{i}" for i in range(len(chunks))]
             all_ids.extend(chunk_ids)
         
-        # Add to vector store
-        if all_chunks:
-            self.vector_store.add_documents(all_chunks, ids=all_ids)
-            logger.info(f"Indexed {len(all_chunks)} chunks from {len(documents)} documents")
+        # Final validation before adding to vector store
+        logger.info(f"Validating {len(all_chunks)} chunks before indexing...")
+        validated_chunks = []
+        for i, chunk in enumerate(all_chunks):
+            if isinstance(chunk, LangchainDocument):
+                validated_chunks.append(chunk)
+            else:
+                logger.warning(f"Chunk {i} is not a Document: {type(chunk)}")
+                # Attempt conversion
+                if isinstance(chunk, tuple) and len(chunk) == 2:
+                    logger.info(f"Converting tuple to Document at index {i}")
+                    validated_chunks.append(
+                        LangchainDocument(page_content=chunk[0], metadata=chunk[1])
+                    )
+                elif isinstance(chunk, dict) and 'page_content' in chunk and 'metadata' in chunk:
+                    logger.info(f"Converting dict to Document at index {i}")
+                    validated_chunks.append(
+                        LangchainDocument(page_content=chunk['page_content'], metadata=chunk['metadata'])
+                    )
+                else:
+                    logger.error(f"Cannot convert chunk at index {i}: {chunk}")
         
-        return len(all_chunks)
+        # Add to vector store
+        if validated_chunks:
+            self.vector_store.add_documents(validated_chunks, ids=all_ids[:len(validated_chunks)])
+            logger.info(f"Indexed {len(validated_chunks)} chunks from {len(documents)} documents")
+        
+        return len(validated_chunks)
     
     def _process_document(self, doc: Dict[str, Any]) -> List[LangchainDocument]:
         """

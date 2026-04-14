@@ -85,20 +85,40 @@ class VectorStore:
         try:
             logger.info(f"Adding {len(documents)} documents to vector store")
             
-            # Ensure documents are Document objects, not tuples
-            if documents and isinstance(documents[0], tuple):
-                # If documents are tuples, extract the Document object
-                documents = [doc[0] if isinstance(doc, tuple) else doc for doc in documents]
+            # Debug: Log first few document types
+            for i, doc in enumerate(documents[:3]):
+                logger.info(f"Document {i} type: {type(doc)}, is LangchainDocument: {isinstance(doc, LangchainDocument)}")
+                if hasattr(doc, 'page_content'):
+                    logger.info(f"  Has page_content: True")
+                if hasattr(doc, 'metadata'):
+                    logger.info(f"  Has metadata: True")
             
-            # Filter complex metadata (lists, dicts, etc.)
-            filtered_documents = []
-            for doc in documents:
+            # Double-check all documents are LangchainDocument objects
+            validated_documents = []
+            for i, doc in enumerate(documents):
                 if isinstance(doc, LangchainDocument):
+                    validated_documents.append(doc)
+                elif isinstance(doc, tuple) and len(doc) == 2:
+                    logger.warning(f"Converting tuple to Document at index {i}")
+                    validated_documents.append(
+                        LangchainDocument(page_content=doc[0], metadata=doc[1])
+                    )
+                else:
+                    logger.error(f"Cannot process document at index {i}: type={type(doc)}, value={doc}")
+                    continue
+            
+            logger.info(f"Validated {len(validated_documents)} documents")
+            
+            # Now filter complex metadata - all should be Document objects
+            filtered_documents = []
+            for i, doc in enumerate(validated_documents):
+                try:
                     filtered_doc = filter_complex_metadata(doc)
                     filtered_documents.append(filtered_doc)
-                else:
-                    logger.warning(f"Skipping invalid document type: {type(doc)}")
-                    filtered_documents.append(doc)
+                except Exception as e:
+                    logger.error(f"Failed to filter metadata for document {i}: {e}")
+                    logger.error(f"Document type: {type(doc)}")
+                    raise
             
             result = self.vectorstore.add_documents(documents=filtered_documents, ids=ids)
             logger.info(f"Successfully added {len(result)} documents")
