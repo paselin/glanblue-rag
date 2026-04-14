@@ -1,12 +1,21 @@
 """
 GameWith scraper for Granblue Fantasy.
+
+Note: GameWithのHTML構造は変更される可能性があるため、
+実際のページを確認してセレクタを調整してください。
 """
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from playwright.async_api import async_playwright, Page, Browser
 import asyncio
-from bs4 import BeautifulSoup
 import re
+
+try:
+    from playwright.async_api import async_playwright, Page, Browser
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    
+from bs4 import BeautifulSoup
 
 from app.core.config import get_settings
 from app.core.logging import setup_logging
@@ -16,18 +25,191 @@ settings = get_settings()
 
 
 class GameWithScraper:
-    """Scraper for GameWith Granblue Fantasy section."""
+    """
+    Scraper for GameWith Granblue Fantasy section.
+    
+    WARNING: このスクレイパーはGameWithのHTML構造に依存します。
+    実際のページ構造を確認し、セレクタを調整してください。
+    """
     
     BASE_URL = "https://gamewith.jp/granblue"
     
-    # 優先度の高いページ
-    PRIORITY_PAGES = {
-        "character_list": "/article/show/20722",  # SSRキャラ一覧
-        "character_ranking": "/article/show/21496",  # キャラランキング
-        "party_guide": "/article/show/20550",  # 編成ガイド
-        "beginner_guide": "/article/show/20486",  # 初心者ガイド
-        "weapon_list": "/article/show/20733",  # 武器一覧
-    }
+    # キャラクター一覧ページのURL候補
+    CHARACTER_LIST_URLS = [
+        "/article/show/20722",  # SSRキャラ一覧
+        "/article/show/21496",  # キャラランキング
+    ]
+    
+    def __init__(self):
+        """Initialize scraper."""
+        if not PLAYWRIGHT_AVAILABLE:
+            raise ImportError(
+                "Playwright is not installed. "
+                "Install with: pip install playwright && playwright install chromium"
+            )
+        
+        self.settings = settings
+        self.browser: Optional[Browser] = None
+        self.playwright = None
+    
+    async def __aenter__(self):
+        """Context manager entry."""
+        self.playwright = await async_playwright().start()
+        self.browser = await self.playwright.chromium.launch(
+            headless=True,
+            args=['--disable-blink-features=AutomationControlled']
+        )
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit."""
+        if self.browser:
+            await self.browser.close()
+        if self.playwright:
+            await self.playwright.stop()
+    
+    async def _fetch_page(self, url: str) -> str:
+        """
+        Fetch page content.
+        
+        Args:
+            url: URL to fetch
+            
+        Returns:
+            HTML content
+        """
+        if not self.browser:
+            raise RuntimeError("Browser not initialized.")
+        
+        page = await self.browser.new_page()
+        
+        try:
+            logger.info(f"Fetching: {url}")
+            await page.goto(url, timeout=settings.scraper_timeout)
+            await page.wait_for_load_state("networkidle")
+            
+            content = await page.content()
+            return content
+            
+        finally:
+            await page.close()
+    
+    async def scrape_character_list(self) -> List[Dict[str, Any]]:
+        """
+        Scrape character list from GameWith.
+        
+        GameWithの実際のHTML構造に合わせて調整が必要です。
+        
+        Returns:
+            List of character data dictionaries
+        """
+        logger.info("Scraping character list from GameWith")
+        
+        characters = []
+        
+        # 複数のURL候補を試す
+        for url_path in self.CHARACTER_LIST_URLS:
+            try:
+                url = f"{self.BASE_URL}{url_path}"
+                content = await self._fetch_page(url)
+                soup = BeautifulSoup(content, "lxml")
+                
+                # デバッグ: ページタイトルを確認
+                title = soup.select_one("h1, title")
+                logger.info(f"Page title: {title.get_text(strip=True) if title else 'N/A'}")
+                
+                # 様々なセレクタパターンを試す
+                selectors = [
+                    "article.character-card",
+                    ".character-list-item",
+                    ".card.character",
+                    "div[class*='character']",
+                    "li.list-item",
+                    "table.character-table tr",
+                ]
+                
+                for selector in selectors:
+                    elements = soup.select(selector)
+                    if elements:
+                        logger.info(f"Found {len(elements)} elements with selector: {selector}")
+                        
+                        # サンプルを表示
+                        if elements:
+                            sample = elements[0]
+                            logger.debug(f"Sample element HTML:\n{sample.prettify()[:500]}")
+                        
+                        # ここで実際のHTML構造に合わせてパース
+                        # TODO: GameWithの実際の構造を確認して実装
+                        
+                        break
+                
+                if not elements:
+                    logger.warning(f"No character elements found on {url}")
+                    # 全HTML構造をログに出力（デバッグ用）
+                    logger.debug(f"Page structure:\n{soup.prettify()[:2000]}")
+                
+            except Exception as e:
+                logger.error(f"Failed to scrape {url}: {e}")
+                continue
+        
+        if not characters:
+            logger.warning("No characters found. GameWithの構造が変わった可能性があります。")
+            logger.warning("手動でページを確認し、セレクタを更新してください。")
+        
+        return characters
+    
+    async def scrape_character_detail(self, url: str) -> Dict[str, Any]:
+        """Scrape character detail (placeholder)."""
+        logger.warning("Character detail scraping not yet implemented")
+        return {
+            "url": url,
+            "content": "",
+            "scraped_at": datetime.now(),
+        }
+    
+    async def scrape_party_compositions(self) -> List[Dict[str, Any]]:
+        """Scrape party compositions (placeholder)."""
+        logger.warning("Party composition scraping not yet implemented")
+        return []
+    
+    async def scrape_all_characters(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Scrape all characters."""
+        characters = await self.scrape_character_list()
+        
+        if limit:
+            characters = characters[:limit]
+        
+        return characters
+
+
+async def scrape_gamewith(character_limit: Optional[int] = 10) -> List[Dict[str, Any]]:
+    """
+    Scrape GameWith data.
+    
+    現在は実装途中です。GameWithの実際のHTML構造を確認してください。
+    """
+    logger.warning("GameWith scraper is under development.")
+    logger.warning("Actual HTML structure needs to be verified and implemented.")
+    
+    # 暫定: 空リストを返す
+    return []
+
+
+if __name__ == "__main__":
+    async def main():
+        logger.info("Testing GameWith scraper...")
+        
+        try:
+            async with GameWithScraper() as scraper:
+                chars = await scraper.scrape_character_list()
+                logger.info(f"Result: {len(chars)} characters")
+        except ImportError as e:
+            logger.error(f"Playwright not available: {e}")
+            logger.error("Install with: pip install playwright && playwright install chromium")
+        except Exception as e:
+            logger.error(f"Error: {e}")
+    
+    asyncio.run(main())
     
     def __init__(self):
         """Initialize scraper."""

@@ -10,8 +10,8 @@ from typing import List, Dict, Any
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from app.services.scraper.gamewith_scraper import scrape_gamewith
-from app.services.scraper.wiki_scraper import scrape_wiki
+# Use mock scraper for now (real scraper needs GameWith HTML structure)
+from app.services.scraper.mock_scraper import scrape_gamewith_mock
 from app.services.indexer import get_indexer
 from app.core.logging import setup_logging
 
@@ -19,16 +19,12 @@ logger = setup_logging()
 
 
 async def scrape_all_sources(
-    use_gamewith: bool = True,
-    use_wiki: bool = False,
     character_limit: int = None,
 ) -> List[Dict[str, Any]]:
     """
     Scrape from all configured sources.
     
     Args:
-        use_gamewith: Whether to scrape GameWith (優先)
-        use_wiki: Whether to scrape Wiki
         character_limit: Limit number of characters per source
         
     Returns:
@@ -36,32 +32,20 @@ async def scrape_all_sources(
     """
     all_documents = []
     
-    # GameWith（優先度高）
-    if use_gamewith:
-        try:
-            logger.info("=== Scraping GameWith (Priority Source) ===")
-            gamewith_data = await scrape_gamewith(character_limit=character_limit)
-            logger.info(f"GameWith: Scraped {len(gamewith_data)} items")
-            all_documents.extend(gamewith_data)
-        except Exception as e:
-            logger.error(f"GameWith scraping failed: {e}")
-    
-    # Wiki（補足情報）
-    if use_wiki:
-        try:
-            logger.info("=== Scraping Wiki (Supplementary Source) ===")
-            wiki_data = await scrape_wiki()
-            logger.info(f"Wiki: Scraped {len(wiki_data)} items")
-            all_documents.extend(wiki_data)
-        except Exception as e:
-            logger.error(f"Wiki scraping failed: {e}")
+    # モックスクレイパーを使用（実際のGameWith構造確認後に実装）
+    try:
+        logger.info("=== Using Mock Scraper (Testing) ===")
+        logger.info("NOTE: This uses sample data. Implement real scraper in gamewith_scraper.py")
+        mock_data = await scrape_gamewith_mock(character_limit=character_limit)
+        logger.info(f"Mock data: {len(mock_data)} items")
+        all_documents.extend(mock_data)
+    except Exception as e:
+        logger.error(f"Mock scraper failed: {e}")
     
     return all_documents
 
 
 async def scrape_and_index(
-    use_gamewith: bool = True,
-    use_wiki: bool = False,
     character_limit: int = 10,
     dry_run: bool = False,
 ):
@@ -69,20 +53,16 @@ async def scrape_and_index(
     Scrape data and index into vector store.
     
     Args:
-        use_gamewith: Scrape from GameWith
-        use_wiki: Scrape from Wiki
         character_limit: Limit per source
         dry_run: If True, scrape but don't index
     """
     logger.info("Starting scrape and index process...")
-    logger.info(f"Sources: GameWith={use_gamewith}, Wiki={use_wiki}")
     logger.info(f"Character limit: {character_limit}")
     logger.info(f"Dry run: {dry_run}")
+    logger.info("NOTE: Currently using MOCK data for testing")
     
     # Scrape data
     documents = await scrape_all_sources(
-        use_gamewith=use_gamewith,
-        use_wiki=use_wiki,
         character_limit=character_limit,
     )
     
@@ -133,19 +113,12 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Scrape Granblue Fantasy data")
-    parser.add_argument("--gamewith", action="store_true", default=True, help="Scrape GameWith (default: True)")
-    parser.add_argument("--wiki", action="store_true", default=False, help="Scrape Wiki")
-    parser.add_argument("--limit", type=int, default=10, help="Character limit per source (default: 10)")
+    parser.add_argument("--limit", type=int, default=10, help="Character limit (default: 10)")
     parser.add_argument("--dry-run", action="store_true", help="Scrape but don't index")
-    parser.add_argument("--all", action="store_true", help="Scrape all characters (no limit)")
     
     args = parser.parse_args()
     
-    limit = None if args.all else args.limit
-    
     asyncio.run(scrape_and_index(
-        use_gamewith=args.gamewith,
-        use_wiki=args.wiki,
-        character_limit=limit,
+        character_limit=args.limit,
         dry_run=args.dry_run,
     ))
