@@ -2,7 +2,7 @@
 Search tool for LangChain agent.
 """
 from typing import Optional, Dict, Any
-from langchain.tools import Tool
+from langchain.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from app.rag.retriever import get_retriever
@@ -14,9 +14,9 @@ logger = setup_logging()
 class SearchInput(BaseModel):
     """Input schema for search tool."""
     query: str = Field(..., description="検索クエリ（キャラクター名、武器名、攻略情報など）")
-    element: Optional[str] = Field(None, description="属性フィルター（火、水、土、風、光、闇）")
-    doc_type: Optional[str] = Field(None, description="ドキュメントタイプ（character, weapon, quest等）")
-    top_k: Optional[int] = Field(5, description="取得する結果の数（デフォルト: 5）")
+    element: Optional[str] = Field(default=None, description="属性フィルター（火、水、土、風、光、闇）")
+    doc_type: Optional[str] = Field(default=None, description="ドキュメントタイプ（character, weapon, quest等）")
+    top_k: int = Field(default=5, description="取得する結果の数（デフォルト: 5）")
 
 
 def search_knowledge(
@@ -68,9 +68,9 @@ def search_knowledge(
         return f"検索中にエラーが発生しました: {str(e)}"
 
 
-def create_search_tool() -> Tool:
+def create_search_tool() -> StructuredTool:
     """Create search tool for agent."""
-    return Tool(
+    return StructuredTool(
         name="search_knowledge",
         description="""グランブルーファンタジーの攻略情報を検索するツール。
 キャラクター情報、武器情報、編成、クエスト攻略などを検索できます。
