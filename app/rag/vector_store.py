@@ -7,7 +7,6 @@ from chromadb.config import Settings as ChromaSettings
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain_community.vectorstores.utils import filter_complex_metadata
 from langchain.schema import Document as LangchainDocument
 
 from app.core.config import get_settings
@@ -15,6 +14,34 @@ from app.core.logging import setup_logging
 
 logger = setup_logging()
 settings = get_settings()
+
+
+def _filter_complex_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Filter metadata to only include primitive types (str, int, float, bool).
+    ChromaDB does not support complex types like lists or dicts.
+    
+    Args:
+        metadata: Original metadata dictionary
+        
+    Returns:
+        Filtered metadata with only primitive types
+    """
+    filtered = {}
+    for key, value in metadata.items():
+        if isinstance(value, (str, int, float, bool)):
+            filtered[key] = value
+        elif isinstance(value, list):
+            # Convert lists to comma-separated strings
+            filtered[key] = ", ".join(str(v) for v in value)
+        elif value is None:
+            # Skip None values
+            continue
+        else:
+            # Convert other types to string
+            logger.warning(f"Converting complex metadata field '{key}' to string: {type(value)}")
+            filtered[key] = str(value)
+    return filtered
 
 
 class VectorStore:
@@ -109,15 +136,21 @@ class VectorStore:
             
             logger.info(f"Validated {len(validated_documents)} documents")
             
-            # Now filter complex metadata - all should be Document objects
+            # Now filter complex metadata - use our custom implementation
             filtered_documents = []
             for i, doc in enumerate(validated_documents):
                 try:
-                    filtered_doc = filter_complex_metadata(doc)
+                    # Create new document with filtered metadata
+                    filtered_metadata = _filter_complex_metadata(doc.metadata)
+                    filtered_doc = LangchainDocument(
+                        page_content=doc.page_content,
+                        metadata=filtered_metadata
+                    )
                     filtered_documents.append(filtered_doc)
                 except Exception as e:
                     logger.error(f"Failed to filter metadata for document {i}: {e}")
                     logger.error(f"Document type: {type(doc)}")
+                    logger.error(f"Metadata: {doc.metadata if hasattr(doc, 'metadata') else 'N/A'}")
                     raise
             
             result = self.vectorstore.add_documents(documents=filtered_documents, ids=ids)
