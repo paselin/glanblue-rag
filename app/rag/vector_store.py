@@ -7,6 +7,7 @@ from chromadb.config import Settings as ChromaSettings
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores.utils import filter_complex_metadata
 from langchain.schema import Document as LangchainDocument
 
 from app.core.config import get_settings
@@ -83,11 +84,18 @@ class VectorStore:
         """
         try:
             logger.info(f"Adding {len(documents)} documents to vector store")
-            result = self.vectorstore.add_documents(documents=documents, ids=ids)
+            
+            # Filter complex metadata (lists, dicts, etc.)
+            filtered_documents = [
+                filter_complex_metadata(doc) for doc in documents
+            ]
+            
+            result = self.vectorstore.add_documents(documents=filtered_documents, ids=ids)
             logger.info(f"Successfully added {len(result)} documents")
             return result
         except Exception as e:
             logger.error(f"Failed to add documents: {e}")
+            raise
             raise
     
     def similarity_search(

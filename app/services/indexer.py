@@ -112,9 +112,13 @@ class DocumentIndexer:
         }
         
         # Add optional fields
-        for field in ["element", "rarity", "tier", "source_url", "tags"]:
+        for field in ["element", "rarity", "tier", "source_url"]:
             if field in doc:
                 metadata[field] = doc[field]
+        
+        # Convert list fields to comma-separated strings
+        if "tags" in doc and doc["tags"]:
+            metadata["tags"] = ", ".join(doc["tags"]) if isinstance(doc["tags"], list) else doc["tags"]
         
         return metadata
 
