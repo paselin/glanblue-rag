@@ -68,18 +68,32 @@ class DocumentIndexer:
         Returns:
             List of document chunks
         """
-        content = doc.get("content", "")
-        
         # Create formatted content
         formatted_content = self._format_content(doc)
+        
+        # Create metadata
+        metadata = self._create_metadata(doc)
         
         # Split into chunks
         chunks = self.text_splitter.create_documents(
             texts=[formatted_content],
-            metadatas=[self._create_metadata(doc)],
+            metadatas=[metadata],
         )
         
-        return chunks
+        # Ensure all chunks are Document objects
+        validated_chunks = []
+        for chunk in chunks:
+            if isinstance(chunk, LangchainDocument):
+                validated_chunks.append(chunk)
+            else:
+                logger.warning(f"Invalid chunk type: {type(chunk)}, converting...")
+                # Convert to Document if needed
+                if isinstance(chunk, tuple) and len(chunk) == 2:
+                    validated_chunks.append(LangchainDocument(page_content=chunk[0], metadata=chunk[1]))
+                else:
+                    logger.error(f"Cannot convert chunk: {chunk}")
+        
+        return validated_chunks
     
     def _format_content(self, doc: Dict[str, Any]) -> str:
         """Format document content."""

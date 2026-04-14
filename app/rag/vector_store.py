@@ -85,17 +85,26 @@ class VectorStore:
         try:
             logger.info(f"Adding {len(documents)} documents to vector store")
             
+            # Ensure documents are Document objects, not tuples
+            if documents and isinstance(documents[0], tuple):
+                # If documents are tuples, extract the Document object
+                documents = [doc[0] if isinstance(doc, tuple) else doc for doc in documents]
+            
             # Filter complex metadata (lists, dicts, etc.)
-            filtered_documents = [
-                filter_complex_metadata(doc) for doc in documents
-            ]
+            filtered_documents = []
+            for doc in documents:
+                if isinstance(doc, LangchainDocument):
+                    filtered_doc = filter_complex_metadata(doc)
+                    filtered_documents.append(filtered_doc)
+                else:
+                    logger.warning(f"Skipping invalid document type: {type(doc)}")
+                    filtered_documents.append(doc)
             
             result = self.vectorstore.add_documents(documents=filtered_documents, ids=ids)
             logger.info(f"Successfully added {len(result)} documents")
             return result
         except Exception as e:
             logger.error(f"Failed to add documents: {e}")
-            raise
             raise
     
     def similarity_search(
