@@ -20,13 +20,12 @@ async def analyze_gamewith_structure():
     """GameWithのHTML構造を分析"""
     
     urls = {
-        "character_list": "https://gamewith.jp/granblue/article/show/20722",
-        "character_ranking": "https://gamewith.jp/granblue/article/show/21496",
-        "character_detail": "https://gamewith.jp/granblue/article/show/21222",  # カタリナ
+        "character_list": "https://xn--bck3aza1a2if6kra4ee0hf.gamewith.jp/article/show/20722",
+        "character_detail": "https://xn--bck3aza1a2if6kra4ee0hf.gamewith.jp/article/show/547954",  # カタリナ
     }
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)  # headless=False で見える
+        browser = await p.chromium.launch(headless=True)  # headlessモードで安定
         page = await browser.new_page()
         
         for name, url in urls.items():
@@ -128,15 +127,6 @@ async def analyze_gamewith_structure():
         logger.info("\n" + "="*60)
         logger.info("Analysis complete. Check the generated HTML files.")
         logger.info("="*60)
-        
-        # ブラウザを開いたままにして手動で確認できるようにする
-        logger.info("\nBrowser window left open for manual inspection.")
-        logger.info("Press Ctrl+C to close.")
-        
-        try:
-            await asyncio.sleep(300)  # 5分待機
-        except KeyboardInterrupt:
-            logger.info("Closing browser...")
         
         await browser.close()
 

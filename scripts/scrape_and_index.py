@@ -10,8 +10,8 @@ from typing import List, Dict, Any
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Use mock scraper for now (real scraper needs GameWith HTML structure)
-from app.services.scraper.mock_scraper import scrape_gamewith_mock
+# Use real GameWith scraper
+from app.services.scraper.gamewith_scraper import scrape_gamewith
 from app.services.indexer import get_indexer
 from app.core.logging import setup_logging
 
@@ -22,25 +22,26 @@ async def scrape_all_sources(
     character_limit: int = None,
 ) -> List[Dict[str, Any]]:
     """
-    Scrape from all configured sources.
+    Scrape from GameWith.
     
     Args:
-        character_limit: Limit number of characters per source
+        character_limit: Limit number of characters
         
     Returns:
-        Combined list of scraped documents
+        List of scraped documents
     """
     all_documents = []
     
-    # モックスクレイパーを使用（実際のGameWith構造確認後に実装）
+    # GameWith実スクレイパーを使用
     try:
-        logger.info("=== Using Mock Scraper (Testing) ===")
-        logger.info("NOTE: This uses sample data. Implement real scraper in gamewith_scraper.py")
-        mock_data = await scrape_gamewith_mock(character_limit=character_limit)
-        logger.info(f"Mock data: {len(mock_data)} items")
-        all_documents.extend(mock_data)
+        logger.info("=== Scraping GameWith (Real Scraper) ===")
+        gamewith_data = await scrape_gamewith(character_limit=character_limit)
+        logger.info(f"GameWith: Scraped {len(gamewith_data)} items")
+        all_documents.extend(gamewith_data)
     except Exception as e:
-        logger.error(f"Mock scraper failed: {e}")
+        logger.error(f"GameWith scraping failed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
     
     return all_documents
 
@@ -59,7 +60,7 @@ async def scrape_and_index(
     logger.info("Starting scrape and index process...")
     logger.info(f"Character limit: {character_limit}")
     logger.info(f"Dry run: {dry_run}")
-    logger.info("NOTE: Currently using MOCK data for testing")
+    logger.info("Using REAL GameWith scraper")
     
     # Scrape data
     documents = await scrape_all_sources(

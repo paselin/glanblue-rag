@@ -1,8 +1,5 @@
 """
-GameWith scraper for Granblue Fantasy.
-
-Note: GameWithのHTML構造は変更される可能性があるため、
-実際のページを確認してセレクタを調整してください。
+GameWith scraper for Granblue Fantasy - REAL IMPLEMENTATION
 """
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -25,20 +22,304 @@ settings = get_settings()
 
 
 class GameWithScraper:
-    """
-    Scraper for GameWith Granblue Fantasy section.
-    
-    WARNING: このスクレイパーはGameWithのHTML構造に依存します。
-    実際のページ構造を確認し、セレクタを調整してください。
-    """
+    """Scraper for GameWith Granblue Fantasy section."""
     
     BASE_URL = "https://gamewith.jp/granblue"
     
-    # キャラクター一覧ページのURL候補
-    CHARACTER_LIST_URLS = [
-        "/article/show/20722",  # SSRキャラ一覧
-        "/article/show/21496",  # キャラランキング
-    ]
+    # キャラクター一覧ページ
+    CHARACTER_LIST_URL = "/article/show/20722"
+    
+    def __init__(self):
+        """Initialize scraper."""
+        if not PLAYWRIGHT_AVAILABLE:
+            raise ImportError(
+                "Playwright is not installed. "
+                "Install with: pip install playwright && playwright install chromium"
+            )
+        
+        self.settings = settings
+        self.browser: Optional[Browser] = None
+        self.playwright = None
+    
+    async def __aenter__(self):
+        """Context manager entry."""
+        self.playwright = await async_playwright().start()
+        self.browser = await self.playwright.chromium.launch(headless=True)
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit."""
+        if self.browser:
+            await self.browser.close()
+        if self.playwright:
+            await self.playwright.stop()
+    
+    async def _fetch_page(self, url: str) -> str:
+        """Fetch page content."""
+        if not self.browser:
+            raise RuntimeError("Browser not initialized.")
+        
+        page = await self.browser.new_page()
+        
+        try:
+            logger.info(f"Fetching: {url}")
+            await page.goto(url, timeout=settings.scraper_timeout)
+            await page.wait_for_load_state("networkidle")
+            await asyncio.sleep(2)  # 追加待機
+            
+            content = await page.content()
+            return content
+            
+        finally:
+            await page.close()
+    
+    async def scrape_character_list(self) -> List[Dict[str, Any]]:
+        """
+        Scrape SSR character list from GameWith.
+        
+        HTML Structure:
+        <ol id="GBFCharactorList">
+          <li data-attr="水" data-kana="...">
+            <a href="...">
+              <div class="_c">画像</div>
+              <div class="_b">
+                <div class="_n">キャラ名</div>
+                <div class="_d">詳細情報</div>
+              </div>
+              <div class="_p">評価点</div>
+            </a>
+          </li>
+        </ol>
+        """
+        logger.info("Scraping character list from GameWith")
+        
+        url = f"{self.BASE_URL}{self.CHARACTER_LIST_URL}"
+        content = await self._fetch_page(url)
+        soup = BeautifulSoup(content, "lxml")
+        
+        characters = []
+        
+        # キャラクターリストを取得
+        char_list = soup.select_one("#GBFCharactorList")
+        if not char_list:
+            logger.error("Character list not found (#GBFCharactorList)")
+            return []
+        
+        char_items = char_list.select("li")
+        logger.info(f"Found {len(char_items)} character items")
+        
+        for item in char_items:
+            try:
+                # 属性を取得
+                element = item.get("data-attr", "")
+                
+                # リンクを取得
+                link = item.select_one("a")
+                if not link:
+                    continue
+                
+                char_url = link.get("href", "")
+                if not char_url:
+                    continue
+                
+                # キャラ名を取得
+                name_elem = item.select_one("._n")
+                if not name_elem:
+                    continue
+                
+                name = name_elem.get_text(strip=True)
+                
+                # 評価点を取得
+                rating_elem = item.select_one("._p")
+                rating = None
+                if rating_elem:
+                    rating_text = rating_elem.get_text(strip=True)
+                    try:
+                        rating = float(rating_text)
+                    except ValueError:
+                        pass
+                
+                # タグを抽出（リミテッド、水着など）
+                tags = []
+                
+                # NEWタグ
+                if "add-new" in item.get("class", []):
+                    tags.append("新キャラ")
+                
+                # 特殊タグ（リミテッド、水着など）
+                name_class = name_elem.get("class", [])
+                if "is-limited" in name_class:
+                    tags.append("リミテッド")
+                if "is-summer" in name_class:
+                    tags.append("水着/浴衣")
+                if "is-halloween" in name_class:
+                    tags.append("ハロウィン")
+                if "is-xmas" in name_class:
+                    tags.append("クリスマス")
+                if "is-valentine" in name_class:
+                    tags.append("バレンタイン")
+                if "is-juten" in name_class:
+                    tags.append("十天衆")
+                if "is-sage" in name_class:
+                    tags.append("十賢者")
+                if "is-eto" in name_class:
+                    tags.append("十二神将")
+                if "is-collabo" in name_class:
+                    tags.append("コラボ")
+                if "is-free" in name_class:
+                    tags.append("配布")
+                
+                # rel属性からもタグ取得
+                rel = name_elem.get("rel", "")
+                if rel:
+                    tags.append(rel)
+                
+                characters.append({
+                    "name": name,
+                    "element": element,
+                    "rarity": "SSR",
+                    "type": "character",
+                    "url": char_url,
+                    "rating": rating,
+                    "tags": tags,
+                    "source": "gamewith",
+                })
+                
+            except Exception as e:
+                logger.warning(f"Failed to parse character item: {e}")
+                continue
+        
+        logger.info(f"Scraped {len(characters)} characters")
+        return characters
+    
+    async def scrape_character_detail(self, url: str) -> Dict[str, Any]:
+        """
+        Scrape detailed character information.
+        """
+        logger.info(f"Scraping character detail: {url}")
+        
+        content = await self._fetch_page(url)
+        soup = BeautifulSoup(content, "lxml")
+        
+        # タイトルからキャラ名を取得
+        title = soup.select_one("h1")
+        name = title.get_text(strip=True) if title else "Unknown"
+        
+        # 記事本文を取得
+        article = soup.select_one("article, .article-body, #article-body")
+        
+        if not article:
+            logger.warning(f"Article content not found for {url}")
+            return {
+                "url": url,
+                "content": "",
+                "scraped_at": datetime.now(),
+            }
+        
+        # テキストコンテンツを抽出
+        content_parts = []
+        
+        # 見出しとテキストを順番に抽出
+        for elem in article.find_all(['h2', 'h3', 'h4', 'p', 'li', 'table']):
+            if elem.name in ['h2', 'h3', 'h4']:
+                heading_text = elem.get_text(strip=True)
+                if heading_text:
+                    content_parts.append(f"\n## {heading_text}\n")
+            elif elem.name == 'p':
+                text = elem.get_text(strip=True)
+                if text and len(text) > 10:  # 短すぎるテキストは除外
+                    content_parts.append(text)
+            elif elem.name == 'li':
+                text = elem.get_text(strip=True)
+                if text:
+                    content_parts.append(f"- {text}")
+            elif elem.name == 'table':
+                # テーブルは簡易的にテキスト化
+                rows = elem.find_all('tr')[:10]  # 最初の10行のみ
+                for row in rows:
+                    cells = [td.get_text(strip=True) for td in row.find_all(['th', 'td'])]
+                    if cells:
+                        content_parts.append(" | ".join(cells))
+        
+        full_content = "\n".join(content_parts)
+        
+        # 属性を抽出
+        element = None
+        for elem_name in ["火", "水", "土", "風", "光", "闇"]:
+            if elem_name in full_content[:500]:
+                element = elem_name
+                break
+        
+        return {
+            "name": name,
+            "url": url,
+            "content": full_content,
+            "element": element,
+            "scraped_at": datetime.now(),
+            "source": "gamewith",
+        }
+    
+    async def scrape_all_characters(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Scrape all character information."""
+        # Get character list
+        characters = await self.scrape_character_list()
+        
+        if limit:
+            characters = characters[:limit]
+        
+        all_details = []
+        
+        # Scrape each character with delay
+        for i, char in enumerate(characters):
+            if not char.get("url"):
+                logger.warning(f"No URL for character: {char.get('name')}")
+                all_details.append(char)  # リストの情報だけでも保存
+                continue
+            
+            try:
+                logger.info(f"Scraping character {i+1}/{len(characters)}: {char.get('name')}")
+                
+                detail = await self.scrape_character_detail(char["url"])
+                
+                # Merge list info with detail
+                merged = {**char, **detail}
+                all_details.append(merged)
+                
+                # Rate limiting
+                await asyncio.sleep(settings.scraper_delay)
+                
+            except Exception as e:
+                logger.error(f"Failed to scrape {char.get('name')}: {e}")
+                # エラーでもリスト情報は保存
+                all_details.append(char)
+                continue
+        
+        return all_details
+
+
+async def scrape_gamewith(character_limit: Optional[int] = 10) -> List[Dict[str, Any]]:
+    """
+    Scrape GameWith data.
+    """
+    async with GameWithScraper() as scraper:
+        return await scraper.scrape_all_characters(limit=character_limit)
+
+
+if __name__ == "__main__":
+    async def main():
+        logger.info("Testing GameWith scraper...")
+        
+        try:
+            data = await scrape_gamewith(character_limit=3)
+            logger.info(f"Scraped {len(data)} items")
+            for item in data:
+                logger.info(f"  - {item['name']} ({item['element']}) Rating: {item.get('rating', 'N/A')}")
+        except Exception as e:
+            logger.error(f"Error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    asyncio.run(main())
     
     def __init__(self):
         """Initialize scraper."""
