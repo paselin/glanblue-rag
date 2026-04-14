@@ -1,3 +1,6 @@
+# Embeddings用の軽量版依存関係（オプション）
+# HuggingFace Embeddingsが重い/エラーが出る場合はこちらを使用
+
 # Core Framework
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
@@ -13,10 +16,8 @@ openai==1.10.0
 # Vector Database
 chromadb==0.4.22
 
-# Embeddings (HuggingFace) - バージョン互換性を確保
-sentence-transformers==2.7.0
-torch==2.3.0
-transformers==4.40.0
+# 軽量Embeddings - OpenAI APIを使用（有料）
+# sentence-transformersとtorchは不要
 
 # Web Scraping
 playwright==1.41.0
