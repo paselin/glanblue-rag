@@ -7,11 +7,12 @@ import asyncio
 from typing import List, Dict, Any, Optional
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Use simple scraper with URL fetching (requests-based, works on MacOS/Windows)
 from app.services.scraper.gamewith_simple_scraper import scrape_gamewith
+from app.services.scraper.wiki_scraper import scrape_wiki
 from app.services.indexer import get_indexer
 from app.core.logging import setup_logging
 
@@ -21,13 +22,15 @@ logger = setup_logging()
 async def scrape_all_sources(
     character_limit: int = None,
     fetch_details: bool = True,
+    include_wiki: bool = False,
 ) -> List[Dict[str, Any]]:
     """
-    Scrape from GameWith.
+    Scrape from GameWith and optionally Wiki.
     
     Args:
         character_limit: Limit number of characters
         fetch_details: If True, fetch detailed info from each character page
+        include_wiki: If True, also scrape Wiki glossaries
         
     Returns:
         List of scraped documents
@@ -53,6 +56,22 @@ async def scrape_all_sources(
         import traceback
         logger.error(traceback.format_exc())
     
+    # Wiki用語集・俗語集
+    if include_wiki:
+        try:
+            logger.info("=== Scraping Wiki (Glossaries) ===")
+            wiki_data = await scrape_wiki(
+                include_glossaries=True,
+                include_terms=True,
+                include_slang=True
+            )
+            logger.info(f"Wiki: Scraped {len(wiki_data)} glossary items")
+            all_documents.extend(wiki_data)
+        except Exception as e:
+            logger.error(f"Wiki scraping failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
     return all_documents
 
 
@@ -60,6 +79,7 @@ async def scrape_and_index(
     character_limit: Optional[int] = 10,
     dry_run: bool = False,
     fetch_details: bool = True,
+    include_wiki: bool = False,
 ):
     """
     Scrape data and index into vector store.
@@ -68,17 +88,20 @@ async def scrape_and_index(
         character_limit: Limit per source (None for all)
         dry_run: If True, scrape but don't index
         fetch_details: If True, fetch detailed info from each character page
+        include_wiki: If True, also scrape Wiki glossaries
     """
     logger.info("Starting scrape and index process...")
     logger.info(f"Character limit: {character_limit if character_limit else 'ALL (no limit)'}")
     logger.info(f"Dry run: {dry_run}")
     logger.info(f"Fetch details: {fetch_details}")
+    logger.info(f"Include Wiki: {include_wiki}")
     logger.info("Using GameWith URL scraper")
     
     # Scrape data
     documents = await scrape_all_sources(
         character_limit=character_limit,
         fetch_details=fetch_details,
+        include_wiki=include_wiki,
     )
     
     if not documents:
@@ -185,11 +208,12 @@ async def scrape_and_index(
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="Scrape Granblue Fantasy data from GameWith")
+    parser = argparse.ArgumentParser(description="Scrape Granblue Fantasy data from GameWith and Wiki")
     parser.add_argument("--limit", type=int, default=10, help="Character limit (default: 10)")
     parser.add_argument("--dry-run", action="store_true", help="Scrape but don't index")
     parser.add_argument("--all", action="store_true", help="Scrape all characters (no limit)")
     parser.add_argument("--no-details", action="store_true", help="Skip fetching detail pages (faster)")
+    parser.add_argument("--wiki", action="store_true", help="Include Wiki glossaries (terms + slang)")
     
     args = parser.parse_args()
     
@@ -203,4 +227,5 @@ if __name__ == "__main__":
         character_limit=limit,
         dry_run=args.dry_run,
         fetch_details=fetch_details,
+        include_wiki=args.wiki,
     ))
